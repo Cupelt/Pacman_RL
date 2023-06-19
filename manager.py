@@ -22,19 +22,22 @@ if is_ipython:
 plt.ion()
 
 def plot_durations(episode_rewards, eps_thresholds, show_result=False):
-    fig = plt.figure(1)
+    fig = plt.figure(1, figsize=(6.4, 9.6))
     durations_t = torch.tensor(episode_rewards, dtype=torch.float)
     eps_thresholds_t = torch.tensor(eps_thresholds, dtype=torch.float)
 
     # eps_threshold 그리기
     plt.subplot(2, 1, 1)
-    plt.plot(eps_thresholds_t.numpy(), color='#e35f62')
-
-    plt.subplot(2, 1, 2)
     if show_result:
         plt.title('Result')
     else:
         plt.title('Training...')
+    plt.plot(eps_thresholds_t.numpy(), color='#e35f62')
+    plt.xlabel('Episode')
+    plt.ylabel('eps_threshold')
+
+    # 생존 시간 그리기
+    plt.subplot(2, 1, 2)
     plt.xlabel('Episode')
     plt.ylabel('Duration')
     plt.plot(durations_t.numpy(), 'b')
