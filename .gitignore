@@ -13,4 +13,4 @@ __pycache__/
 *$py.class
 
 # trained files
-pacman_model/*
+pacman_model/
