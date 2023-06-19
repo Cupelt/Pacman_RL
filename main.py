@@ -3,39 +3,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import matplotlib
-import matplotlib.pyplot as plt
 import random
-import math
-import os
 
-from datetime import datetime
+import manager
+from manager import batch_size
+from DQN import Transition
+
 from collections import namedtuple, deque
 
 env = gym.make("ALE/MsPacman-v5")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# matplotlib 설정
-is_ipython = 'inline' in matplotlib.get_backend()
-if is_ipython:
-    from IPython import display
-
-plt.ion()
-
-
-Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
-
 # HyperParams
-batch_size = 128
-memory_size = 15000
 gamma = .99
 learning_rate = 1e-4
 tau = 0.005
-
-save_rate = 5
-save_path = ".pacman_model"
-save_point = False
 
 eps_start = 1.0
 eps_end = 0.1
@@ -44,80 +26,15 @@ eps_decay = 0.999995
 num_episodes = 5000
 max_step = 10000
 
-class ReplayMemory(object):
-    def __init__(self, capacity):
-        self.memory = deque([], maxlen=capacity)
-
-    def push(self, *args):
-        """transition 저장"""
-        self.memory.append(Transition(*args))
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-    
-    def setSize(self, count):
-        self.memory = deque(self.memory, maxlen=count)
-
-class Agent(nn.Module):
-
-    def __init__(self, input, output):
-        super(Agent, self).__init__()
-        self.layer1 = nn.Sequential(
-            nn.Conv2d(input, 32, kernel_size=8, stride=4),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(22 * 16 * 64, 512),
-            nn.ReLU(),
-            nn.Linear(512, output)
-        )
-    def forward(self, x):
-        return self.layer1(x)
-
 n_observations = env.observation_space.shape[2]
 n_actions = env.action_space.n
 
-
-agent_net = Agent(n_observations, n_actions).to(device)
-target_net = Agent(n_observations, n_actions).to(device)
-
-if os.path.exists(f"{save_path}/model-latest.pt"):
-    checkpoint = torch.load(f"{save_path}/model-latest.pt")
-
-    agent_net.load_state_dict(checkpoint['agent_state_dict'])
-    target_net.load_state_dict(checkpoint['target_state_dict'])
-
-    i_episode = checkpoint['epoch']
-    steps_done = checkpoint['steps_done']
-
-    episode_rewards = checkpoint['episode_rewards']
-    memory = checkpoint['replaybuffer']
-    memory.setSize(memory_size)
-    
-    print("Model Loaded")
-else:
-    target_net.load_state_dict(agent_net.state_dict())
-    
-    i_episode = 0
-    steps_done = 0
-
-    episode_rewards = []
-    memory = ReplayMemory(memory_size)
+agent_net, target_net, i_episode, \
+    steps_done, episode_rewards, eps_thresholds, memory = manager.load_model(n_observations, n_actions, device=device)
 
 optimizer = optim.Adam(agent_net.parameters(), learning_rate)
 criterion = nn.SmoothL1Loss()
 
-
-print(steps_done)
 def optimize_model():
     if len(memory) < batch_size:
         return
@@ -147,32 +64,6 @@ def optimize_model():
     torch.nn.utils.clip_grad_value_(agent_net.parameters(), 100)
     optimizer.step()
 
-def plot_durations(show_result=False):
-    fig = plt.figure(1)
-    durations_t = torch.tensor(episode_rewards, dtype=torch.float)
-    if show_result:
-        plt.title('Result')
-    else:
-        plt.clf()
-        plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    # 100개의 에피소드 평균을 가져 와서 도표 그리기
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
-
-    fig.canvas.flush_events()
-    plt.pause(0.01)  # 도표가 업데이트되도록 잠시 멈춤
-    if is_ipython:
-        if not show_result:
-            display.display(plt.gcf())
-            display.clear_output(wait=True)
-        else:
-            display.display(plt.gcf())
-
 
 def select_action(state):
     global steps_done
@@ -188,7 +79,7 @@ def select_action(state):
         return torch.tensor([[env.action_space.sample()]], dtype=torch.long, device=device)
 
 while i_episode < num_episodes:
-    plot_durations()
+    manager.plot_durations(episode_rewards, eps_thresholds)
 
     state, info = env.reset()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0).view(1, 3, 210, 160)
@@ -206,7 +97,6 @@ while i_episode < num_episodes:
             next_state = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0).view(1, 3, 210, 160)
 
         memory.push(state, action, next_state, reward)
-
         state = next_state
 
         optimize_model()
@@ -221,34 +111,10 @@ while i_episode < num_episodes:
             break
     
     episode_rewards.append(i_step)
-    
+    eps_thresholds.append(max(eps_end, eps_start * (eps_decay ** steps_done)))
 
-    eps_threshold = max(eps_end, eps_start * (eps_decay ** steps_done))
-    print("Episode : {}, Reward : {}, eps_threshold : {:.5}, memory_length : {:,}, cuda_memory : {:.4}".format(i_episode, episode_rewards[i_episode], eps_threshold, len(memory), torch.cuda.memory_allocated() / (1024 ** 3)))
+    print("Episode : {}, Reward : {}, eps_threshold : {:.5}, memory_length : {:,}, cuda_memory : {:.4}".format(i_episode, episode_rewards[i_episode], eps_thresholds[i_episode], len(memory), torch.cuda.memory_allocated() / (1024 ** 3)))
     i_episode += 1
 
-    if i_episode % save_rate == 0:
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-
-        if save_point:
-            date = datetime.today().strftime("%Y%m%d%H%M%S")
-            torch.save({
-                    'epoch': i_episode,
-                    'episode_rewards': episode_rewards,
-                    'steps_done': steps_done,
-                    'replaybuffer': memory,
-                    'agent_state_dict': agent_net.state_dict(),
-                    'target_state_dict': target_net.state_dict()
-                   }, 
-                   f'{save_path}/model-{date}.pt')
-
-        torch.save({
-                    'epoch' : i_episode,
-                    'episode_rewards': episode_rewards,
-                    'steps_done': steps_done,
-                    'replaybuffer': memory,
-                    'agent_state_dict': agent_net.state_dict(),
-                    'target_state_dict': target_net.state_dict()
-                   },
-                   f'{save_path}/model-latest.pt')
+    manager.save_model(i_episode, episode_rewards, eps_thresholds, steps_done, 
+                       memory, agent_net, target_net)
