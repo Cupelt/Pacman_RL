@@ -113,7 +113,9 @@ while i_episode < num_episodes:
     episode_rewards.append(i_step)
     eps_thresholds.append(max(eps_end, eps_start * (eps_decay ** steps_done)))
 
-    print("Episode : {}, Reward : {}, eps_threshold : {:.5}, memory_length : {:,}, cuda_memory : {:.4}".format(i_episode, episode_rewards[i_episode], eps_thresholds[i_episode], len(memory), torch.cuda.memory_allocated() / (1024 ** 3)))
+    print("Episode : {}, Reward : {}, eps_threshold : {:.5}, memory_length : {:,}, cuda_memory : {:.4}".format(
+        i_episode, episode_rewards[i_episode], eps_thresholds[i_episode], len(memory), torch.cuda.memory_allocated() / (1024 ** 3)
+        ))
     i_episode += 1
 
     manager.save_model(i_episode, episode_rewards, eps_thresholds, steps_done, 
