@@ -9,10 +9,17 @@ import manager
 from manager import batch_size
 from DQN import Transition
 
-from collections import namedtuple, deque
+env = gym.make("ALE/MsPacman-v5", render_mode="human")
 
-env = gym.make("ALE/MsPacman-v5")
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device_type = "cpu"
+if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+    device_type = "mps"
+    device_memory = torch.mps.current_allocated_memory
+elif torch.cuda.is_available():
+    device_type = "cuda"
+    device_memory = torch.cuda.memory_allocated
+
+device = torch.device(device_type)
 
 # HyperParams
 gamma = .99
@@ -113,8 +120,8 @@ while i_episode < num_episodes:
     episode_rewards.append(i_step)
     eps_thresholds.append(max(eps_end, eps_start * (eps_decay ** steps_done)))
 
-    print("Episode : {}, Reward : {}, eps_threshold : {:.5}, memory_length : {:,}, cuda_memory : {:.4}".format(
-        i_episode, episode_rewards[i_episode], eps_thresholds[i_episode], len(memory), torch.cuda.memory_allocated() / (1024 ** 3)
+    print("Episode : {}, Reward : {}, eps_threshold : {:.5}, memory_length : {:,}, gpu_memory : {:.4}".format(
+        i_episode, episode_rewards[i_episode], eps_thresholds[i_episode], len(memory), device_memory() / (1024 ** 3) if device_memory is not None else 0
         ))
     i_episode += 1
 
