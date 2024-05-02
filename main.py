@@ -28,7 +28,7 @@ tau = 0.005
 
 eps_start = 1.0
 eps_end = 0.1
-eps_decay = 0.999995
+eps_decay = 0.99999975
 
 num_episodes = 5000
 max_step = 10000
